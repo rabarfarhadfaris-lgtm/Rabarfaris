@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="ckb" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ڕۆنیا و ڕۆسا و ڕەنوو 3D</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+    body { overflow: hidden; background: #070b19; font-family: Tahoma, Arial, sans-serif; touch-action: none; color: #fff; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+
+    /* هێڵی سووری مەترسی کاتێک خوێن کەمە */
+    #vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 8;
+      box-shadow: inset 0 0 70px rgba(255, 0, 50, 0); transition: box-shadow 0.2s;
+    }
+    #vignette.danger { animation: pulseDanger 0.7s infinite alternate; }
+    @keyframes pulseDanger {
+      from { box-shadow: inset 0 0 45px rgba(255, 0, 50, 0.35); }
+      to { box-shadow: inset 0 0 95px rgba(255, 0, 50, 0.85); }
+    }
+
+    /* HUD سەرەوە */
+    #hud {
+      position: fixed; top: 10px; left: 10px; right: 10px; z-index: 10;
+      display: none; flex-direction: column; gap: 6px; pointer-events: none;
+    }
+    .hud-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pill {
+      background: rgba(10, 16, 36, 0.82); border: 1.5px solid #00e5ff;
+      padding: 5px 11px; border-radius: 14px; font-size: 13px; font-weight: bold;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .pill.gold { border-color: #ffd700; color: #ffd700; }
+    .pill.rank { border-color: #00e676; color: #00e676; }
+    #muteBtn { pointer-events: auto; cursor: pointer; background: rgba(10,16,36,0.9); border: 1.5px solid #aaa; color: #fff; padding: 5px 10px; border-radius: 12px; font-size: 14px; }
+
+    .bar-wrap { width: 100%; height: 10px; background: rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.25); }
+    #progFill { height: 100%; width: 0%; background: linear-gradient(90deg, #00e5ff, #00e676); }
+    .bars-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    #hpFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff1744, #00e676); transition: width 0.15s; }
+    #turboFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff9100, #ffd700); }
+    #bossBox { display: none; background: rgba(40, 0, 15, 0.85); border: 1.5px solid #ff1744; border-radius: 10px; padding: 4px 10px; }
+    #bossFill { height: 8px; width: 100%; background: #ff1744; border-radius: 5px; margin-top: 3px; }
+
+    /* پەیامی ناوەڕاست (Headshot / Warning) */
+    #toast {
+      position: fixed; top: 24%; left: 50%; transform: translate(-50%, -50%) scale(0.8);
+      font-size: 24px; font-weight: bold; color: #ffd700; text-shadow: 0 0 15px #ff6d00, 0 2px 4px #000;
+      opacity: 0; pointer-events: none; z-index: 14; transition: all 0.2s; text-align: center;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+
+    /* دوگمەکانی مۆبایل */
+    #controls {
+      position: fixed; bottom: 18px; left: 14px; right: 14px; z-index: 12;
+      display: none; justify-content: space-between; align-items: flex-end; direction: ltr; pointer-events: none;
+    }
+    .ctrl-group { display: flex; gap: 12px; pointer-events: auto; }
+    .ctrl-col { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; pointer-events: auto; }
+    .tbtn {
+      width: 68px; height: 68px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.65);
+      background: rgba(10, 20, 45, 0.55); color: #fff; font-size: 24px; font-weight: bold;
+      display: flex; align-items: center; justify-content: center; backdrop-filter: blur(3px);
+    }
+    .tbtn:active { background: rgba(0, 229, 255, 0.65); transform: scale(0.93); }
+    .tbtn.shoot { border-color: #ff1744; background: rgba(255, 23, 68, 0.35); width: 74px; height: 74px; }
+    .tbtn.jump { border-color: #00e676; background: rgba(0, 230, 118, 0.3); }
+    .tbtn.turbo { border-color: #ffd700; background: rgba(255, 215, 0, 0.3); width: 60px; height: 60px; font-size: 18px; }
+
+    /* مینیو و پەنجەرەکان */
+    .screen {
+      position: fixed; inset: 0; background: radial-gradient(circle at top, #132247 0%, #060914 100%);
+      z-index: 20; display: flex; flex-direction: column; align-items: center;
+      overflow-y: auto; padding: 16px 14px 30px; text-align: center;
+    }
+    .title {
+      font-size: 27px; font-weight: bold; margin-bottom: 4px;
+      background: linear-gradient(90deg, #00e5ff, #ffd700, #ff4081);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .sub { font-size: 12px; color: #b0bec5; margin-bottom: 10px; }
+    .coin-badge {
+      background: rgba(255, 215, 0, 0.15); border: 1.5px solid #ffd700; color: #ffd700;
+      padding: 6px 18px; border-radius: 20px; font-weight: bold; font-size: 15px; margin-bottom: 12px;
+    }
+    .panel {
+      width: 100%; max-width: 440px; background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
+      padding: 10px 12px; margin-bottom: 10px; text-align: right;
+    }
+    .panel-title { font-size: 13px; color: #00e5ff; font-weight: bold; margin-bottom: 7px; }
+    input[type="text"] {
+      width: 100%; padding: 9px 12px; border-radius: 10px; border: 1.5px solid #00e5ff;
+      background: rgba(0,0,0,0.45); color: #fff; font-size: 15px; text-align: center; outline: none;
+    }
+
+    /* هەڵبژاردنی خێرای کارەکتەرەکان */
+    .char-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+    .chip {
+      flex: 0 0 auto; padding: 7px 12px; border-radius: 11px; border: 1.5px solid #334155;
+      background: rgba(15, 23, 42, 0.8); color: #fff; font-size: 12px; cursor: pointer; text-align: center;
+    }
+    .chip.active { border-color: #00e5ff; background: rgba(0, 229, 255, 0.2); box-shadow: 0 0 10px rgba(0,229,255,0.3); }
+    .chip.locked { opacity: 0.65; border-style: dashed; }
+
+    /* کەشوهەوا و قۆناغ */
+    .biome-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .biome-btn {
+      padding: 8px 4px; border-radius: 10px; border: 1.5px solid #334155;
+      background: rgba(15, 23, 42, 0.8); color: #fff; font-size: 12px; cursor: pointer;
+    }
+    .biome-btn.active { border-color: #00e676; background: rgba(0, 230, 118, 0.2); }
+
+    .lvl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .lvl-btn {
+      width: 38px; height: 38px; border-radius: 10px; border: none; background: #1e293b;
+      color: #fff; font-size: 20px; font-weight: bold; cursor: pointer;
+    }
+    #lvlLabel { font-size: 16px; font-weight: bold; color: #ffd700; }
+
+    .main-btn {
+      width: 100%; max-width: 440px; padding: 14px; border: none; border-radius: 16px;
+      font-size: 17px; font-weight: bold; cursor: pointer; margin-top: 6px;
+      background: linear-gradient(90deg, #00e5ff, #00e676); color: #05101c;
+      box-shadow: 0 4px 18px rgba(0, 229, 255, 0.35);
+    }
+    .shop-open-btn {
+      width: 100%; max-width: 440px; padding: 13px; border: none; border-radius: 16px;
+      font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 8px;
+      background: linear-gradient(90deg, #ffd700, #ff9100); color: #111;
+    }
+
+    /* دوکان */
+    #shopScreen { display: none; }
+    .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; max-width: 440px; margin-bottom: 10px; }
+    .tab-btn {
+      padding: 8px 4px; border-radius: 10px; border: 1px solid #334155;
+      background: #0f172a; color: #cbd5e1; font-size: 12px; font-weight: bold; cursor: pointer;
+    }
+    .tab-btn.active { background: #00e5ff; color: #05101c; border-color: #00e5ff; }
+    #shopItems { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 8px; }
+    .item-card {
+      background: rgba(15, 23, 42, 0.9); border: 1.5px solid #26334d; border-radius: 12px;
+      padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; text-align: right; gap: 8px;
+    }
+    .item-card.equipped { border-color: #00e676; }
+    .item-card h4 { font-size: 14px; color: #fff; margin-bottom: 3px; }
+    .item-card p { font-size: 11px; color: #94a3b8; }
+    .act-btn {
+      padding: 7px 12px; border-radius: 9px; border: none; font-size: 12px; font-weight: bold; cursor: pointer; min-width: 86px;
+    }
+    .act-buy { background: #ffd700; color: #000; }
+    .act-equip { background: #00e5ff; color: #000; }
+    .act-done { background: #00c853; color: #fff; }
+    .act-no { background: #334155; color: #94a3b8; }
+
+    /* کۆتایی یاری */
+    #endScreen { display: none; justify-content: center; }
+    #endTitle { font-size: 30px; margin-bottom: 10px; }
+    #endStats { font-size: 15px; color: #e2e8f0; line-height: 1.8; margin-bottom: 18px; }
+  </style>
+</head>
+<body>
+
+  <div id="vignette"></div>
+  <div id="toast">HEADSHOT! 2X COINS</div>
+
+  <!-- HUD کاتی یاریکردن -->
+  <div id="hud">
+    <div class="hud-row">
+      <div class="pill">قۆناغی <span id="hudLvl">1</span>/10</div>
+      <div class="pill rank">پلە: <span id="hudRank">1/4</span></div>
+      <div class="pill gold">🪙 <span id="hudCoins">0</span></div>
+      <button id="muteBtn">🔊</button>
+    </div>
+    <div class="bar-wrap"><div id="progFill"></div></div>
+    <div class="bars-grid">
+      <div>
+        <div style="font-size:11px;margin-bottom:2px;">❤️ تەندروستی</div>
+        <div class="bar-wrap"><div id="hpFill"></div></div>
+      </div>
+      <div>
+        <div style="font-size:11px;margin-bottom:2px;">⚡ تێربۆ</div>
+        <div class="bar-wrap"><div id="turboFill"></div></div>
+      </div>
+    </div>
+    <div id="bossBox">
+      <div style="font-size:12px;color:#ff8a80;font-weight:bold;">👹 بۆسی قۆناغ: <span id="bossName">ورچی زەبەلاح</span></div>
+      <div class="bar-wrap"><div id="bossFill"></div></div>
+    </div>
+  </div>
+
+  <!-- دوگمەکانی کۆنترۆڵ بۆ مۆبایل -->
+  <div id="controls">
+    <div class="ctrl-group">
+      <button class="tbtn" id="btnLeft">◀</button>
+      <button class="tbtn" id="btnRight">▶</button>
+    </div>
+    <div class="ctrl-col">
+      <button class="tbtn turbo" id="btnTurbo">⚡</button>
+      <div class="ctrl-group">
+        <button class="tbtn jump" id="btnJump">⬆</button>
+        <button class="tbtn shoot" id="btnShoot">🔥</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- شاشەی سەرەتا -->
+  <div class="screen" id="menuScreen">
+    <div class="title">ڕۆنیا و ڕۆسا و ڕەنوو 3D</div>
+    <div class="sub">پێشبڕکێی ئاژەڵان • شەڕ و تەقەکردن • ١٠ قۆناغ</div>
+    <div class="coin-badge">کۆی پارەکانت: 🪙 <span id="menuCoins">0</span></div>
+
+    <div class="panel">
+      <div class="panel-title">ناوی یاریزان</div>
+      <input type="text" id="playerNameInput" maxlength="16" placeholder="ناوەکەت بنووسە...">
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">هەڵبژاردنی کارەکتەر (٨ کارەکتەر لە دوکان هەن)</div>
+      <div class="char-strip" id="quickCharStrip"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">هەڵبژاردنی کەشوهەوا</div>
+      <div class="biome-grid">
+        <button class="biome-btn active" data-biome="spring">🌿 بەهار و ڕووبار</button>
+        <button class="biome-btn" data-biome="desert">🏜️ بیابان و گێژەڵووکە</button>
+        <button class="biome-btn" data-biome="winter">❄️ زستان و بەفر</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">قۆناغی یاری (١ تا ١٠)</div>
+      <div class="lvl-row">
+        <button class="lvl-btn" id="lvlPrev">-</button>
+        <span id="lvlLabel">قۆناغی 1</span>
+        <button class="lvl-btn" id="lvlNext">+</button>
+      </div>
+    </div>
+
+    <button class="main-btn" id="startBtn">▶ دەستپێکردنی پێشبڕکێ</button>
+    <button class="shop-open-btn" id="openShopBtn">🛒 دوکان (٨ کارەکتەر، ٧ ئاژەڵ، ٥ چەک، زین)</button>
+  </div>
+
+  <!-- شاشەی دوکان -->
+  <div class="screen" id="shopScreen">
+    <div class="title">دوکانی یاری</div>
+    <div class="coin-badge">پارەکانت: 🪙 <span id="shopCoins">0</span></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="chars">کارەکتەر (٨)</button>
+      <button class="tab-btn" data-tab="mounts">ئاژەڵ (٧)</button>
+      <button class="tab-btn" data-tab="weapons">چەک (٥)</button>
+      <button class="tab-btn" data-tab="gear">کەرەستە</button>
+    </div>
+    <div id="shopItems"></div>
+    <button class="main-btn" id="closeShopBtn" style="margin-top:14px;background:#334155;color:#fff;">گەڕانەوە بۆ مینیو</button>
+  </div>
+
+  <!-- شاشەی بردنەوە / دۆڕان -->
+  <div class="screen" id="endScreen">
+    <h1 id="endTitle">سەرکەوتن!</h1>
+    <div id="endStats"></div>
+    <button class="main-btn" id="nextOrRetryBtn">قۆناغی دواتر</button>
+    <button class="shop-open-btn" id="backMenuBtn">گەڕانەوە بۆ مینیو</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // ======================== داتای سەرەکی یاری ========================
+    const CHARS = [
+      { id: 'ronya',    name: 'ڕۆنیا',        price: 0,    hpBonus: 15, coinBonus: 1.1, hair: 0x3e2723, outfit: 0xe91e63, skin: 0xffccbc, desc: 'پاڵەوانی سەرەکی | +15 تەندروستی' },
+      { id: 'rosa',     name: 'ڕۆسا',         price: 0,    hpBonus: 10, coinBonus: 1.2, hair: 0xffd54f, outfit: 0x9c27b0, skin: 0xffe0b2, desc: 'سوارچاکی خێرا | +20% پارەی زیاتر' },
+      { id: 'renu',     name: 'ڕەنوو',        price: 0,    hpBonus: 20, coinBonus: 1.1, hair: 0x1a1a1a, outfit: 0x00bcd4, skin: 0xf5cba7, desc: 'نیشانەشکێن | +20 تەندروستی' },
+      { id: 'boy',      name: 'کوڕە سوارچاک', price: 120,  hpBonus: 25, coinBonus: 1.25,hair: 0x4e342e, outfit: 0x2196f3, skin: 0xffccbc, desc: 'چالاک و خێرا | +25 تەندروستی' },
+      { id: 'elder',    name: 'پیرەمێردی دانا',price: 250,  hpBonus: 35, coinBonus: 1.4, hair: 0xeeeeee, outfit: 0x795548, skin: 0xf5cba7, beard: true, desc: 'ئەزمووندار | +40% پارە' },
+      { id: 'princess', name: 'شازادەی خۆر',  price: 450,  hpBonus: 45, coinBonus: 1.6, hair: 0xffb300, outfit: 0xff4081, skin: 0xffe0b2, crown: true, desc: 'تاجدار | +60% پارەی زیاتر' },
+      { id: 'knight',   name: 'جەنگاوەر',     price: 700,  hpBonus: 65, coinBonus: 1.75,hair: 0x90a4ae, outfit: 0x455a64, skin: 0xffccbc, helmet: true, desc: 'زرێپۆش | +65 تەندروستی' },
+      { id: 'king',     name: 'پاشای زێڕین',  price: 1100, hpBonus: 90, coinBonus: 2.0, hair: 0xffffff, outfit: 0xffd700, skin: 0xf5cba7, crown: true, beard: true, desc: 'بەهێزترین کارەکتەر | 2X پارە!' }
+    ];
+
+    const MOUNTS = [
+      { id: 'donkey',  name: 'گوێدرێژ',       price: 0,    speed: 0.62, jump: 0.27, hp: 100, color: 0x8d6e63, ability: 'ئاسایی و هاوسەنگ' },
+      { id: 'horse',   name: 'ئەسپی ڕەسەن',   price: 0,    speed: 0.72, jump: 0.30, hp: 120, color: 0x5d4037, ability: 'خێرا و نەرم' },
+      { id: 'zebra',   name: 'کەرەکێوی',      price: 180,  speed: 0.80, jump: 0.32, hp: 135, color: 0xeeeeee, ability: 'زۆر خێرا لە گۆڕینی هێڵ' },
+      { id: 'bull',    name: 'گامێشی کێوی',   price: 350,  speed: 0.76, jump: 0.28, hp: 170, color: 0x3e2723, ability: 'تایبەت: بە قۆچ دڕندەکان فڕێ دەدات!' },
+      { id: 'giraffe', name: 'زەڕافە',        price: 550,  speed: 0.82, jump: 0.42, hp: 160, color: 0xffca28, ability: 'تایبەت: بازدانی زۆر بەرز بۆ سکەی ئاسمان' },
+      { id: 'hippo',   name: 'ئەسپی ئاوی',    price: 800,  speed: 0.78, jump: 0.29, hp: 220, color: 0x78909c, ability: 'تایبەت: بەربەست و دڕکەکان تێکدەشکێنێت' },
+      { id: 'stag',    name: 'ئاسکی زێڕین',   price: 1300, speed: 0.94, jump: 0.38, hp: 250, color: 0xffd700, ability: 'ئەفسانەیی: بەرزترین خێرایی + قۆچ لێدان' }
+    ];
+
+    const WEAPONS = [
+      { id: 'pistol',   name: 'دەمانچە',          price: 0,   dmg: 35,  rate: 320, pellets: 1, color: 0x00e5ff, desc: 'چەکی سەرەتایی | زیان: 35' },
+      { id: 'shotgun',  name: 'تاپڕ (ساچمە)',     price: 160, dmg: 26,  rate: 520, pellets: 3, color: 0xff9100, desc: '٣ فیشەک بەیەکەوە دەتەقێنێت' },
+      { id: 'rifle',    name: 'تفەنگی نیشانەشکێن',price: 340, dmg: 85,  rate: 450, pellets: 1, color: 0x00e676, desc: 'زیانی زۆر بەرز: 85' },
+      { id: 'repeater', name: 'ڕەشاشی خێرا',     price: 600, dmg: 32,  rate: 140, pellets: 1, color: 0xe040fb, desc: 'تەقەی زۆر خێرا و بەردەوام' },
+      { id: 'cannon',   name: 'تۆپی قورس',        price: 950, dmg: 160, rate: 650, pellets: 1, color: 0xff1744, desc: 'بەهێزترین چەک | زیان: 160' }
+    ];
+
+    const GEAR = [
+      { id: 'saddle',    name: 'زینی شاهانە',   price: 140, desc: '+12% خێرایی زیاتر بۆ ئاژەڵەکەت' },
+      { id: 'horseshoe', name: 'ناڵی زێڕین',    price: 200, desc: '+18% بازدانی بەرزتر' },
+      { id: 'bridle',    name: 'لغاوی پۆڵایین', price: 260, desc: '+40 تەندروستی و بەرگری زیاتر' }
+    ];
+
+    // ======================== خەزنکردنی داتا ========================
+    let save = {
+      name: 'ڕابەر',
+      coins: 150,
+      maxLevel: 1,
+      char: 'ronya',
+      unlockedChars: ['ronya', 'rosa', 'renu'],
+      mount: 'horse',
+      unlockedMounts: ['donkey', 'horse'],
+      weapon: 'pistol',
+      unlockedWeapons: ['pistol'],
+      gear: []
+    };
+
+    try {
+      const raw = localStorage.getItem('ronyaRosaRenu3D_v1');
+      if (raw) save = Object.assign(save, JSON.parse(raw));
+    } catch (e) {}
+
+    function saveData() {
+      try { localStorage.setItem('ronyaRosaRenu3D_v1', JSON.stringify(save)); } catch (e) {}
+      document.getElementById('menuCoins').innerText = Math.floor(save.coins);
+      document.getElementById('shopCoins').innerText = Math.floor(save.coins);
+    }
+
+    // ======================== دەنگی Web Audio API ========================
+    let actx = null, muted = false;
+    function initAudio() {
+      if (!actx) {
+        try {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) actx = new AC();
+        } catch (e) {}
+      }
+      if (actx && actx.state === 'suspended') {
+        try { actx.resume(); } catch (e) {}
+      }
+    }
+
+    function playSound(type) {
+      if (muted) return;
+      initAudio();
+      if (!actx) return;
+      try {
+        const now = actx.currentTime;
+        const osc = actx.createOscillator();
+        const gain = actx.createGain();
+        osc.connect(gain);
+        gain.connect(actx.destination);
+
+        if (type === 'coin') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(980, now);
+          osc.frequency.exponentialRampToValueAtTime(1450, now + 0.1);
+          gain.gain.setValueAtTime(0.14, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.start(now); osc.stop(now + 0.12);
+        } else if (type === 'shoot') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(340, now);
+          osc.frequency.exponentialRampToValueAtTime(75, now + 0.11);
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+          osc.start(now); osc.stop(now + 0.11);
+        } else if (type === 'headshot') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(600, now);
+          osc.frequency.setValueAtTime(1200, now + 0.08);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now); osc.stop(now + 0.25);
+        } else if (type === 'hoof') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(110 + Math.random() * 25, now);
+          osc.frequency.exponentialRampToValueAtTime(45, now + 0.06);
+          gain.gain.setValueAtTime(0.07, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+          osc.start(now); osc.stop(now + 0.06);
+        } else if (type === 'hit') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(130, now);
+          osc.frequency.linearRampToValueAtTime(55, now + 0.22);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          osc.start(now); osc.stop(now + 0.22);    } else if (type === 'win') {
+      [523, 659, 784, 1046].forEach((f, idx) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.15, now + idx * 0.11);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.11 + 0.3);
+        o.connect(g); g.connect(actx.destination);
+        o.start(now + idx * 0.11); o.stop(now + idx * 0.11 + 0.3);
+      });
+    }
+  } catch (e) {}
+}
+
+document.getElementById('muteBtn').addEventListener('click', () => {
+  muted = !muted;
+  document.getElementById('muteBtn').innerText = muted ? '🔇' : '🔊';
+});
+
+// ======================== ژینگەی 3D (Three.js) ========================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.011);
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 220);
+camera.position.set(0, 5.2, 9.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x334422, 0.75);
+scene.add(hemiLight);
+const sunLight = new THREE.DirectionalLight(0xfff5e4, 1.1);
+sunLight.position.set(18, 30, 15);
+sunLight.castShadow = true;
+scene.add(sunLight);
+
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x388e3c, roughness: 0.9 });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 300), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.z = -110;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const trackMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.85 });
+const track = new THREE.Mesh(new THREE.PlaneGeometry(12.5, 300), trackMat);
+track.rotation.x = -Math.PI / 2;
+track.position.set(0, 0.02, -110);
+track.receiveShadow = true;
+scene.add(track);
+
+function createNameplate(text, bgColor = 'rgba(10,16,36,0.78)') {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  ctx.roundRect(12, 10, 232, 44, 16);
+  ctx.fill();
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 26px Tahoma, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 33);
+  const tex = new THREE.CanvasTexture(c);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  spr.scale.set(2.4, 0.6, 1);
+  return spr;
+}
+
+function createRacerMesh(charId, mountId, gearList, labelText, isPlayer) {
+  const root = new THREE.Group();
+  const char = CHARS.find(c => c.id === charId) || CHARS[0];
+  const mount = MOUNTS.find(m => m.id === mountId) || MOUNTS[1];
+
+  const mountMat = new THREE.MeshStandardMaterial({ color: mount.color, roughness: 0.6 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.5 });
+
+  const scaleY = mountId === 'giraffe' ? 1.35 : (mountId === 'hippo' ? 1.1 : 1.0);
+  const scaleW = mountId === 'hippo' ? 1.35 : (mountId === 'bull' ? 1.2 : 1.0);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.95 * scaleW, 0.85 * scaleY, 2.1), mountMat);
+  body.position.y = 1.15 * scaleY;
+  body.castShadow = true;
+  root.add(body);
+
+  if (gearList.includes('saddle')) {
+    const saddle = new THREE.Mesh(
+      new THREE.BoxGeometry(1.04 * scaleW, 0.22, 0.85),
+      new THREE.MeshStandardMaterial({ color: 0xd32f2f, metalness: 0.4 })
+    );
+    saddle.position.set(0, 1.58 * scaleY, 0.05);
+    root.add(saddle);
+  }
+
+  const neckH = mountId === 'giraffe' ? 1.6 : 0.75;
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 1.45 * scaleY, -0.95);
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(0.45 * scaleW, neckH, 0.5), mountMat);
+  neck.position.set(0, neckH * 0.45, -0.1);
+  neck.rotation.x = 0.35;
+  headGroup.add(neck);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.48 * scaleW, 0.42, 0.75), mountMat);
+  head.position.set(0, neckH * 0.85, -0.35);
+  headGroup.add(head);
+
+  if (mountId === 'bull' || mountId === 'stag') {
+    const hornMat = new THREE.MeshStandardMaterial({ color: mountId === 'stag' ? 0xffd700 : 0xeeeeee, emissive: mountId === 'stag' ? 0x664400 : 0 });
+    const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.65, 6), hornMat);
+    hornL.position.set(-0.28, neckH * 1.05, -0.3); hornL.rotation.z = 0.5;
+    const hornR = hornL.clone(); hornR.position.x = 0.28; hornR.rotation.z = -0.5;
+    headGroup.add(hornL, hornR);
+  }
+
+  if (gearList.includes('bridle')) {
+    const bridle = new THREE.Mesh(new THREE.BoxGeometry(0.54 * scaleW, 0.46, 0.2), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
+    bridle.position.set(0, neckH * 0.85, -0.55);
+    headGroup.add(bridle);
+  }
+  root.add(headGroup);
+
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.75, 0.18), darkMat);
+  tail.position.set(0, 1.2 * scaleY, 1.12);
+  tail.rotation.x = -0.35;
+  root.add(tail);
+
+  const legs = [];
+  const legGeo = new THREE.BoxGeometry(0.24 * scaleW, 0.95 * scaleY, 0.24);
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9 });
+  const legOffsets = [
+    [-0.32 * scaleW, -0.75], [0.32 * scaleW, -0.75],
+    [-0.32 * scaleW,  0.75], [0.32 * scaleW,  0.75]
+  ];
+  legOffsets.forEach(([lx, lz]) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(lx, 0.9 * scaleY, lz);
+    const legMesh = new THREE.Mesh(legGeo, mountMat);
+    legMesh.position.y = -0.45 * scaleY;
+    legMesh.castShadow = true;
+    pivot.add(legMesh);
+    if (gearList.includes('horseshoe')) {
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.28 * scaleW, 0.1, 0.28), shoeMat);
+      shoe.position.y = -0.9 * scaleY;
+      pivot.add(shoe);
+    }
+    root.add(pivot);
+    legs.push(pivot);
+  });
+
+  const rider = new THREE.Group();
+  rider.position.set(0, 1.62 * scaleY, 0.05);
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62, 0.72, 0.4),
+    new THREE.MeshStandardMaterial({ color: char.outfit })
+  );
+  torso.position.y = 0.36;
+  torso.castShadow = true;
+  rider.add(torso);
+
+  const rHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 12, 12),
+    new THREE.MeshStandardMaterial({ color: char.skin })
+  );
+  rHead.position.y = 0.92;
+  rider.add(rHead);
+
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 12, 12),
+    new THREE.MeshStandardMaterial({ color: char.hair })
+  );
+  hair.position.set(0, 0.98, 0.05);
+  rider.add(hair);
+
+  if (char.beard) {
+    const beard = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.35, 8), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    beard.rotation.x = Math.PI;
+    beard.position.set(0, 0.72, -0.18);
+    rider.add(beard);
+  }
+  if (char.crown) {
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.18, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0x554400 }));
+    crown.position.y = 1.24;
+    rider.add(crown);
+  }
+  if (char.helmet) {
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.52, 0.56), new THREE.MeshStandardMaterial({ color: 0x90a4ae, metalness: 0.8 }));
+    helm.position.y = 0.95;
+    rider.add(helm);
+  }
+  root.add(rider);
+
+  const plate = createNameplate(labelText, isPlayer ? 'rgba(0, 130, 180, 0.88)' : 'rgba(20, 25, 45, 0.78)');
+  plate.position.set(0, 3.35 * scaleY, 0);
+  root.add(plate);
+
+  return { root, legs, headGroup, tail, rider, plate };
+}
+
+let selectedBiome = 'spring';
+let selectedLevel = 1;
+let playing = false;
+let playerObj = null;
+let rivals = [];
+let obstacles = [];
+let coinsList = [];
+let powerups = [];
+let predators = [];
+let bullets = [];
+let particles = [];
+let scenery = [];
+let rivers = [];
+let tornadoes = [];
+let crowdGroup = null;
+let finishLineMesh = null;
+
+let laneX = 0, curX = 0, posY = 0, velY = 0, grounded = true;
+let distance = 0, finishDist = 450;
+let playerHp = 100, maxPlayerHp = 100;
+let turboEnergy = 100, turboActive = false;
+let shieldTimer = 0, magnetTimer = 0, slowMoTimer = 0, shakeTimer = 0;
+let lastShotTime = 0, hoofTimer = 0, runCoins = 0, kills = 0;
+let bossEntity = null;
+
+const LANES = [-3.6, 0, 3.6];
+
+function showToast(txt, color = '#ffd700') {
+  const el = document.getElementById('toast');
+  el.innerText = txt;
+  el.style.color = color;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 950);
+}
+
+function applyBiomeStyle(biome) {
+  if (biome === 'spring') {
+    scene.background = new THREE.Color(0x7ec8e3);
+    scene.fog = new THREE.FogExp2(0x7ec8e3, 0.011);
+    groundMat.color.setHex(0x43a047);
+    trackMat.color.setHex(0x8d6e63);
+    sunLight.color.setHex(0xfff8e7);
+  } else if (biome === 'desert') {
+    scene.background = new THREE.Color(0xf4a261);
+    scene.fog = new THREE.FogExp2(0xf4a261, 0.012);
+    groundMat.color.setHex(0xe9c46a);
+    trackMat.color.setHex(0xd4a373);
+    sunLight.color.setHex(0xffe0b2);
+  } else {
+    scene.background = new THREE.Color(0xcfd8dc);
+    scene.fog = new THREE.FogExp2(0xcfd8dc, 0.013);
+    groundMat.color.setHex(0xf5f7fa);
+    trackMat.color.setHex(0xb0bec5);
+    sunLight.color.setHex(0xe1f5fe);
+  }
+}
+
+function clearWorld() {
+  [obstacles, coinsList, powerups, predators, bullets, particles, scenery, rivers, tornadoes].forEach(arr => {
+    arr.forEach(o => scene.remove(o.mesh || o));
+    arr.length = 0;
+  });
+  rivals.forEach(r => scene.remove(r.model.root));
+  rivals.length = 0;
+  if (playerObj) scene.remove(playerObj.root);
+  if (crowdGroup) scene.remove(crowdGroup);
+  if (finishLineMesh) scene.remove(finishLineMesh);
+  bossEntity = null;
+  document.getElementById('bossBox').style.display = 'none';
+}
+
+function spawnParticles(x, y, z, colorHex, count = 6) {
+  const geo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+  const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+  for (let i = 0; i < count; i++) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x + (Math.random() - 0.5) * 0.6, y, z + (Math.random() - 0.5) * 0.6);
+    scene.add(m);
+    particles.push({
+      mesh: m,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: 0.08 + Math.random() * 0.15,
+      vz: 0.1 + Math.random() * 0.15,
+      life: 22
+    });
+  }
+}
+
+function startLevel(lvl) {
+  initAudio();
+  clearWorld();
+  selectedLevel = lvl;
+  applyBiomeStyle(selectedBiome);
+
+  const char = CHARS.find(c => c.id === save.char) || CHARS[0];
+  const mount = MOUNTS.find(m => m.id === save.mount) || MOUNTS[1];
+
+  maxPlayerHp = mount.hp + char.hpBonus + (save.gear.includes('bridle') ? 40 : 0);
+  playerHp = maxPlayerHp;
+  turboEnergy = 100;
+  turboActive = false;
+  shieldTimer = 0;
+  magnetTimer = 0;
+  slowMoTimer = 0;
+  shakeTimer = 0;
+  distance = 0;
+  runCoins = 0;
+  kills = 0;
+  laneX = 0; curX = 0; posY = 0; velY = 0; grounded = true;
+  finishDist = 380 + lvl * 75;
+
+  playerObj = createRacerMesh(save.char, save.mount, save.gear, save.name || 'ڕابەر', true);
+  scene.add(playerObj.root);
+
+  const rivalConfigs = [
+    { name: 'ئازاد', char: 'boy', mount: 'horse' },
+    { name: 'نارین', char: 'rosa', mount: 'zebra' },
+    { name: 'شێرکۆ', char: 'knight', mount: 'bull' }
+  ];
+  rivalConfigs.forEach((rc, idx) => {
+    const m = createRacerMesh(rc.char, rc.mount, [], rc.name, false);
+    const rx = LANES[idx];
+    m.root.position.set(rx, 0, -4 - idx * 3);
+    scene.add(m.root);
+    rivals.push({
+      model: m,
+      lane: idx,
+      x: rx,
+      dist: 8 + idx * 6,
+      baseSpeed: mount.speed * (0.86 + lvl * 0.012 + Math.random() * 0.08)
+    });
+  });
+
+  for (let i = 0; i < 36; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const x = side * (9 + Math.random() * 18);
+    const z = -i * 8;
+    const tree = new THREE.Group();
+    if (selectedBiome === 'winter') {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.4, 4.2, 7), new THREE.MeshStandardMaterial({ color: 0x1b5e20 }));
+      cone.position.y = 2.4;
+      const snowTop = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.0, 7), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+      snowTop.position.y = 3.6;
+      tree.add(cone, snowTop);
+    } else if (selectedBiome === 'desert') {
+      const cactus = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 3.0, 8), new THREE.MeshStandardMaterial({ color: 0x2e7d32 }));
+      cactus.position.y = 1.5;
+      tree.add(cactus);
+    } else {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.0, 6), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+      trunk.position.y = 1.0;
+      const leaves = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 8), new THREE.MeshStandardMaterial({ color: 0x2e7d32 }));
+      leaves.position.y = 2.6;
+      tree.add(trunk, leaves);
+    }
+    tree.position.set(x, 0, z);
+    scene.add(tree);
+    scenery.push(tree);
+  }
+
+  finishLineMesh = new THREE.Group();
+  const postL = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 6, 8), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+  postL.position.set(-6.2, 3, 0);
+  const postR = postL.clone(); postR.position.x = 6.2;
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(13, 1.3, 0.3), new THREE.MeshStandardMaterial({ color: 0xff1744 }));
+  banner.position.set(0, 5.5, 0);
+  finishLineMesh.add(postL, postR, banner);
+  finishLineMesh.position.z = -finishDist;
+  scene.add(finishLineMesh);
+
+  crowdGroup = new THREE.Group();
+  for (let i = 0; i < 10; i++) {
+    const fan = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 1.5, 0.5),
+      new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x00e5ff : 0xffd700 })
+    );
+    const side = i < 5 ? -7.5 : 7.5;
+    fan.position.set(side, 0.75, -finishDist + (i % 5) * 2.2 - 4);
+    crowdGroup.add(fan);
+  }
+  const winSign = createNameplate(`بژی ${save.name || 'ڕابەر'}! 🏆`, 'rgba(200, 20, 60, 0.9)');
+  winSign.scale.set(4.5, 1.1, 1);
+  winSign.position.set(0, 7.2, -finishDist);
+  crowdGroup.add(winSign);
+  scene.add(crowdGroup);
+
+  if (lvl === 5 || lvl === 10) {
+    spawnPredator(true, lvl === 10 ? 'شێری ئەلفای تاریکی' : 'ورچی زەبەلاح');
+  }
+
+  document.getElementById('menuScreen').style.display = 'none';
+  document.getElementById('shopScreen').style.display = 'none';
+  document.getElementById('endScreen').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('controls').style.display = 'flex';
+  document.getElementById('hudLvl').innerText = lvl;
+  document.getElementById('hudCoins').innerText = Math.floor(save.coins);
+  document.getElementById('vignette').classList.remove('danger');
+
+  playing = true;
+}
+function spawnObstacleAndCoins() {
+  const obsLane = Math.floor(Math.random() * 3);
+  const isBush = (selectedBiome === 'desert' && Math.random() < 0.5);
+  const geo = isBush ? new THREE.SphereGeometry(0.95, 8, 8) : new THREE.BoxGeometry(2.1, 1.1, 1.2);
+  const mat = new THREE.MeshStandardMaterial({ color: isBush ? 0x6d4c41 : 0x546e7a, roughness: 0.9 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(LANES[obsLane], 0.55, -135);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  obstacles.push({ mesh, lane: obsLane, isBush });
+
+  const freeLanes = [0, 1, 2].filter(l => l !== obsLane);
+  const coinLane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
+  const coinGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.14, 14);
+  const coinMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0x886600, metalness: 0.8 });
+
+  for (let k = 0; k < 3; k++) {
+    const cm = new THREE.Mesh(coinGeo, coinMat);
+    cm.rotation.z = Math.PI / 2;
+    const arcY = Math.random() < 0.35 ? 2.1 : 0.9;
+    cm.position.set(LANES[coinLane], arcY, -135 - k * 3.5);
+    scene.add(cm);
+    coinsList.push(cm);
+  }
+
+  if (Math.random() < 0.25) {
+    const types = ['hp', 'turbo', 'magnet', 'shield'];
+    const pType = types[Math.floor(Math.random() * types.length)];
+    const pColors = { hp: 0xff1744, turbo: 0x00e676, magnet: 0x2979ff, shield: 0x00e5ff };
+    const pm = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.55, 0),
+      new THREE.MeshStandardMaterial({ color: pColors[pType], emissive: pColors[pType], emissiveIntensity: 0.4 })
+    );
+    pm.position.set(LANES[freeLanes[0]], 1.3, -142);
+    scene.add(pm);
+    powerups.push({ mesh: pm, type: pType });
+  }
+
+  if (selectedBiome === 'spring' && Math.random() < 0.22) {
+    const riv = new THREE.Mesh(
+      new THREE.PlaneGeometry(12.5, 7),
+      new THREE.MeshStandardMaterial({ color: 0x0288d1, roughness: 0.2, metalness: 0.5 })
+    );
+    riv.rotation.x = -Math.PI / 2;
+    riv.position.set(0, 0.04, -150);
+    scene.add(riv);
+    rivers.push(riv);
+  } else if (selectedBiome === 'desert' && Math.random() < 0.22) {
+    const tor = new THREE.Mesh(
+      new THREE.ConeGeometry(1.4, 5.5, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xd7ccc8, wireframe: true })
+    );
+    tor.position.set(LANES[Math.floor(Math.random() * 3)], 2.75, -145);
+    scene.add(tor);
+    tornadoes.push({ mesh: tor, dir: Math.random() < 0.5 ? 1 : -1 });
+  }
+}
+
+function spawnPredator(isBoss = false, bossTitle = '') {
+  const g = new THREE.Group();
+  const sc = isBoss ? 2.1 : 1.05;
+  const col = isBoss ? 0x212121 : (Math.random() < 0.5 ? 0x616161 : 0xd84315);
+  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.7 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.85 * sc, 0.75 * sc, 1.7 * sc), mat);
+  body.position.y = 0.8 * sc;
+  g.add(body);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.75 * sc, 0.7 * sc, 0.75 * sc), mat);
+  head.position.set(0, 1.15 * sc, -0.95 * sc);
+  g.add(head);
+
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff1744 });
+  const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.14 * sc, 0.12 * sc, 0.1), eyeMat);
+  eyeL.position.set(-0.2 * sc, 1.25 * sc, -1.33 * sc);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.2 * sc;
+  g.add(eyeL, eyeR);
+
+  const startLane = Math.floor(Math.random() * 3);
+  g.position.set(LANES[startLane], 0, isBoss ? 7.5 : 8.5);
+  scene.add(g);
+
+  const hp = isBoss ? (280 + selectedLevel * 45) : (45 + selectedLevel * 10);
+  const pred = { mesh: g, hp, maxHp: hp, isBoss, headY: 1.15 * sc, attackCooldown: 0 };
+  predators.push(pred);
+
+  if (isBoss) {
+    bossEntity = pred;
+    document.getElementById('bossBox').style.display = 'block';
+    document.getElementById('bossName').innerText = bossTitle;
+    document.getElementById('bossFill').style.width = '100%';
+  }
+}
+
+function fireWeapon() {
+  if (!playing) return;
+  initAudio();
+  const wep = WEAPONS.find(w => w.id === save.weapon) || WEAPONS[0];
+  const now = performance.now();
+  if (now - lastShotTime < wep.rate) return;
+  lastShotTime = now;
+
+  playSound('shoot');
+  shakeTimer = 6;
+
+  for (let i = 0; i < wep.pellets; i++) {
+    const spread = (i - (wep.pellets - 1) / 2) * 0.14;
+    const bMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(wep.id === 'cannon' ? 0.32 : 0.16, 8, 8),
+      new THREE.MeshBasicMaterial({ color: wep.color })
+    );
+    bMesh.position.set(curX, posY + 1.5, 0.8);
+    scene.add(bMesh);
+    bullets.push({ mesh: bMesh, vx: spread, vz: 0.95, dmg: wep.dmg, life: 45 });
+  }
+}
+
+function doJump() {
+  if (!playing || !grounded) return;
+  initAudio();
+  const mount = MOUNTS.find(m => m.id === save.mount) || MOUNTS[1];
+  velY = mount.jump * (save.gear.includes('horseshoe') ? 1.18 : 1.0);
+  grounded = false;
+  playSound('hoof');
+}
+
+function moveLeft() { if (playing && laneX > -3.6) laneX = Math.round((laneX - 3.6) * 10) / 10; }
+function moveRight() { if (playing && laneX < 3.6) laneX = Math.round((laneX + 3.6) * 10) / 10; }
+
+document.getElementById('btnLeft').addEventListener('touchstart', e => { e.preventDefault(); moveLeft(); });
+document.getElementById('btnRight').addEventListener('touchstart', e => { e.preventDefault(); moveRight(); });
+document.getElementById('btnJump').addEventListener('touchstart', e => { e.preventDefault(); doJump(); });
+document.getElementById('btnShoot').addEventListener('touchstart', e => { e.preventDefault(); fireWeapon(); });
+document.getElementById('btnTurbo').addEventListener('touchstart', e => { e.preventDefault(); if (turboEnergy > 15) turboActive = true; });
+document.getElementById('btnTurbo').addEventListener('touchend', () => { turboActive = false; });
+
+document.getElementById('btnLeft').addEventListener('mousedown', moveLeft);
+document.getElementById('btnRight').addEventListener('mousedown', moveRight);
+document.getElementById('btnJump').addEventListener('mousedown', doJump);
+document.getElementById('btnShoot').addEventListener('mousedown', fireWeapon);
+document.getElementById('btnTurbo').addEventListener('mousedown', () => { if (turboEnergy > 15) turboActive = true; });
+document.getElementById('btnTurbo').addEventListener('mouseup', () => { turboActive = false; });
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') moveLeft();
+  if (e.key === 'ArrowRight' || e.key === 'd') moveRight();
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') doJump();
+  if (e.key === 'f' || e.key === 'Enter') fireWeapon();
+  if (e.key === 'Shift') turboActive = true;
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift') turboActive = false; });
+
+function finishRace(won) {
+  playing = false;
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('vignette').classList.remove('danger');
+
+  const endTitle = document.getElementById('endTitle');
+  const endStats = document.getElementById('endStats');
+  const nextBtn = document.getElementById('nextOrRetryBtn');
+
+  if (won) {
+    playSound('win');
+    const bonus = 50 + selectedLevel * 25;
+    save.coins += bonus;
+    if (selectedLevel >= save.maxLevel && selectedLevel < 10) save.maxLevel = selectedLevel + 1;
+    saveData();
+
+    const rank = 1 + rivals.filter(r => r.dist > distance).length;
+    endTitle.innerText = `🏆 ${save.name || 'ڕابەر'} سەرکەوت!`;
+    endTitle.style.color = '#00e676';
+    endStats.innerHTML = `قۆناغی ${selectedLevel} تەواو بوو!<br>پلەی کۆتایی: <b>${rank} لە 4</b><br>دڕندە لەناوبراوەکان: <b>${kills}</b><br>پارەی کۆکراوە + پاداشت: <b>🪙 ${Math.floor(runCoins + bonus)}</b>`;
+    nextBtn.innerText = selectedLevel < 10 ? `▶ قۆناغی ${selectedLevel + 1}` : '🔄 دووبارە یاری بکە';
+    nextBtn.onclick = () => startLevel(selectedLevel < 10 ? selectedLevel + 1 : 1);
+  } else {
+    saveData();
+    endTitle.innerText = '💀 یارییەکە کۆتایی هات!';
+    endTitle.style.color = '#ff1744';
+    endStats.innerHTML = `دڕندەکان پێیان گەیشتیت!<br>پارەی کۆکراوە لەم گەڕەدا: <b>🪙 ${Math.floor(runCoins)}</b>`;
+    nextBtn.innerText = '🔄 هەوڵدانەوە';
+    nextBtn.onclick = () => startLevel(selectedLevel);
+  }
+  document.getElementById('endScreen').style.display = 'flex';
+}
+
+let obsTimer = 0, predTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (!playing) { renderer.render(scene, camera); return; }
+
+  const timeScale = slowMoTimer > 0 ? 0.32 : 1.0;
+  if (slowMoTimer > 0) slowMoTimer -= 0.016;
+
+  const char = CHARS.find(c => c.id === save.char) || CHARS[0];
+  const mount = MOUNTS.find(m => m.id === save.mount) || MOUNTS[1];
+
+  let speed = mount.speed * (save.gear.includes('saddle') ? 1.12 : 1.0);
+  if (turboActive && turboEnergy > 0) {
+    speed *= 1.48;
+    turboEnergy = Math.max(0, turboEnergy - 0.65 * timeScale);
+    if (turboEnergy === 0) turboActive = false;
+  } else {
+    turboEnergy = Math.min(100, turboEnergy + 0.18 * timeScale);
+  }
+  const step = speed * timeScale;
+  distance += step;
+
+  const agility = mount.id === 'zebra' ? 0.28 : 0.18;
+  curX += (laneX - curX) * agility * timeScale;
+  velY -= 0.016 * timeScale;
+  posY += velY * timeScale;
+  if (posY <= 0) { posY = 0; velY = 0; grounded = true; }
+
+  playerObj.root.position.set(curX, posY, 0);
+  playerObj.root.rotation.z = (curX - laneX) * 0.08;
+  playerObj.rider.rotation.x = turboActive ? 0.25 : (grounded ? 0.05 : -0.15);
+
+  const gPhase = distance * 0.85;
+  playerObj.legs[0].rotation.x = Math.sin(gPhase) * 0.75;
+  playerObj.legs[1].rotation.x = Math.sin(gPhase + Math.PI) * 0.75;
+  playerObj.legs[2].rotation.x = Math.sin(gPhase + Math.PI) * 0.75;
+  playerObj.legs[3].rotation.x = Math.sin(gPhase) * 0.75;
+  playerObj.headGroup.rotation.x = Math.sin(gPhase * 2) * 0.08;
+  playerObj.tail.rotation.z = Math.sin(gPhase) * 0.25;
+
+  hoofTimer += step;
+  if (grounded && hoofTimer > 2.4) {
+    hoofTimer = 0;
+    playSound('hoof');
+    let pCol = selectedBiome === 'winter' ? 0xffffff : (selectedBiome === 'desert' ? 0xe9c46a : 0x8d6e63);
+    rivers.forEach(r => { if (Math.abs(r.position.z) < 4) pCol = 0x29b6f6; });
+    spawnParticles(curX, 0.15, 0.5, pCol, 3);
+  }
+
+  obsTimer += step;
+  if (obsTimer > Math.max(16, 30 - selectedLevel * 1.1) && distance < finishDist - 55) {
+    obsTimer = 0;
+    spawnObstacleAndCoins();
+  }
+
+  predTimer += step;
+  if (predTimer > Math.max(48, 95 - selectedLevel * 4) && predators.length < (bossEntity ? 2 : 3)) {
+    predTimer = 0;
+    spawnPredator(false);
+  }
+
+  scenery.forEach(t => { t.position.z += step; if (t.position.z > 15) t.position.z -= 288; });
+  if (finishLineMesh) finishLineMesh.position.z = distance - finishDist;
+  if (crowdGroup) {
+    crowdGroup.position.z = distance;
+    crowdGroup.children.forEach((c, idx) => {
+      if (idx < 10) c.position.y = 0.75 + Math.abs(Math.sin(performance.now() * 0.008 + idx)) * 0.45;
+    });
+  }
+
+  for (let i = rivers.length - 1; i >= 0; i--) {
+    rivers[i].position.z += step;
+    if (rivers[i].position.z > 15) { scene.remove(rivers[i]); rivers.splice(i, 1); }
+  }
+  for (let i = tornadoes.length - 1; i >= 0; i--) {
+    const t = tornadoes[i];
+    t.mesh.position.z += step;
+    t.mesh.rotation.y += 0.15;
+    t.mesh.position.x += t.dir * 0.05 * timeScale;
+    if (Math.abs(t.mesh.position.x) > 4.2) t.dir *= -1;
+    if (Math.abs(t.mesh.position.z) < 1.3 && Math.abs(t.mesh.position.x - curX) < 1.3 && shieldTimer <= 0) playerHp -= 0.4 * timeScale;
+    if (t.mesh.position.z > 15) { scene.remove(t.mesh); tornadoes.splice(i, 1); }
+  }
+
+  rivals.forEach(r => {
+    r.dist += r.baseSpeed * timeScale;
+    r.model.root.position.set(r.x, 0, distance - r.dist);
+    const rp = r.dist * 0.85;
+    r.model.legs[0].rotation.x = Math.sin(rp) * 0.7;
+    r.model.legs[1].rotation.x = Math.sin(rp + Math.PI) * 0.7;
+    r.model.legs[2].rotation.x = Math.sin(rp + Math.PI) * 0.7;
+    r.model.legs[3].rotation.x = Math.sin(rp) * 0.7;
+  });
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.mesh.position.z += step;
+    if (Math.abs(o.mesh.position.z) < 1.1 && Math.abs(o.mesh.position.x - curX) < 1.15 && posY < 0.95) {
+      if (mount.id === 'hippo' || shieldTimer > 0) {
+        spawnParticles(o.mesh.position.x, 0.7, 0, 0x8d6e63, 8);
+        scene.remove(o.mesh); obstacles.splice(i, 1); continue;
+      } else {
+        playerHp -= 18; shakeTimer = 10; playSound('hit');
+        spawnParticles(curX, 1, 0, 0xff1744, 8);
+        scene.remove(o.mesh); obstacles.splice(i, 1); continue;
+      }
+    }
+    if (o.mesh.position.z > 14) { scene.remove(o.mesh); obstacles.splice(i, 1); }
+  }
+
+  if (magnetTimer > 0) magnetTimer -= 0.016;
+  if (shieldTimer > 0) shieldTimer -= 0.016;
+
+  for (let i = coinsList.length - 1; i >= 0; i--) {
+    const c = coinsList[i];
+    c.position.z += step; c.rotation.y += 0.08;
+    if (magnetTimer > 0 && c.position.z > -18 && c.position.z < 4) {
+      c.position.x += (curX - c.position.x) * 0.15;
+      c.position.y += (posY + 1.0 - c.position.y) * 0.15;
+    }
+    if (Math.abs(c.position.z) < 1.4 && Math.abs(c.position.x - curX) < 1.35 && Math.abs(c.position.y - (posY + 1.0)) < 1.5) {
+      const val = Math.round(5 * char.coinBonus);
+      save.coins += val; runCoins += val;
+      document.getElementById('hudCoins').innerText = Math.floor(save.coins);
+      playSound('coin'); scene.remove(c); coinsList.splice(i, 1); continue;
+    }
+    if (c.position.z > 14) { scene.remove(c); coinsList.splice(i, 1); }
+  }
+
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const p = powerups[i];
+    p.mesh.position.z += step; p.mesh.rotation.y += 0.06;
+    if (Math.abs(p.mesh.position.z) < 1.4 && Math.abs(p.mesh.position.x - curX) < 1.35) {
+      playSound('coin');
+      if (p.type === 'hp') { playerHp = Math.min(maxPlayerHp, playerHp + 35); showToast('❤️ +35 تەندروستی!', '#00e676'); }
+      if (p.type === 'turbo') { turboEnergy = 100; turboActive = true; showToast('⚡ تێربۆ پڕ بوو!', '#ffd700'); }
+      if (p.type === 'magnet') { magnetTimer = 8; showToast('🧲 موگناتیسی سکە!', '#2979ff'); }
+      if (p.type === 'shield') { shieldTimer = 7; showToast('🛡️ قەڵغانی پارێزەر!', '#00e5ff'); }
+      scene.remove(p.mesh); powerups.splice(i, 1); continue;
+    }
+    if (p.mesh.position.z > 14) { scene.remove(p.mesh); powerups.splice(i, 1); }
+  }
+
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.x += b.vx * timeScale;
+    b.mesh.position.z += b.vz * timeScale;
+    b.life--;
+    let hit = false;
+
+    for (let j = predators.length - 1; j >= 0; j--) {
+      const pr = predators[j];
+      const hitRad = pr.isBoss ? 1.8 : 1.15;
+      if (Math.abs(b.mesh.position.z - pr.mesh.position.z) < hitRad && Math.abs(b.mesh.position.x - pr.mesh.position.x) < hitRad) {
+        hit = true;
+        const isHead = b.mesh.position.y >= pr.headY - 0.15;
+        pr.hp -= isHead ? b.dmg * 1.6 : b.dmg;
+        spawnParticles(b.mesh.position.x, b.mesh.position.y, b.mesh.position.z, 0xffd700, 6);
+
+        if (isHead) {
+          playSound('headshot'); slowMoTimer = 0.35;
+          const bonusCoin = Math.round(15 * char.coinBonus);
+          save.coins += bonusCoin; runCoins += bonusCoin;
+          document.getElementById('hudCoins').innerText = Math.floor(save.coins);
+          showToast(`🎯 HEADSHOT! +${bonusCoin} 🪙`, '#ffd700');
+        }
+        if (pr.isBoss && bossEntity) document.getElementById('bossFill').style.width = Math.max(0, (pr.hp / pr.maxHp) * 100) + '%';
+        if (pr.hp <= 0) {
+          kills++;
+          const reward = pr.isBoss ? 150 : 20;
+          save.coins += reward; runCoins += reward;
+          document.getElementById('hudCoins').innerText = Math.floor(save.coins);
+          if (pr.isBoss) { showToast('👑 بۆس بەزێنرا! +150 🪙', '#00e676'); bossEntity = null; document.getElementById('bossBox').style.display = 'none'; }
+          spawnParticles(pr.mesh.position.x, 1.2, pr.mesh.position.z, 0xff1744, 14);
+          scene.remove(pr.mesh); predators.splice(j, 1);
+        }
+        break;
+      }
+    }
+    if (hit || b.life <= 0) { scene.remove(b.mesh); bullets.splice(i, 1); }
+  }
+
+  for (let i = predators.length - 1; i >= 0; i--) {
+    const pr = predators[i];
+    pr.mesh.position.x += (curX - pr.mesh.position.x) * 0.04 * timeScale;
+    const targetZ = pr.isBoss ? 4.8 : 3.2;
+    if (pr.mesh.position.z > targetZ) pr.mesh.position.z -= 0.06 * timeScale;
+    pr.mesh.position.y = Math.abs(Math.sin(performance.now() * 0.012 + i)) * 0.35;
+
+    if ((mount.id === 'bull' || mount.id === 'stag') && Math.abs(pr.mesh.position.z - 1.5) < 2.2 && Math.abs(pr.mesh.position.x - curX) < 1.4 && !pr.isBoss) {
+      pr.mesh.position.z += 5.5; pr.hp -= 30; showToast('🐂 قۆچ لێدان!', '#ff9100');
+    }
+    if (pr.attackCooldown > 0) pr.attackCooldown -= 0.016;
+    if (Math.abs(pr.mesh.position.z) < 3.6 && Math.abs(pr.mesh.position.x - curX) < 1.3 && pr.attackCooldown <= 0) {
+      pr.attackCooldown = 1.2;
+      if (shieldTimer <= 0) { playerHp -= pr.isBoss ? 22 : 14; shakeTimer = 10; playSound('hit'); }
+    }
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const pt = particles[i];
+    pt.mesh.position.x += pt.vx; pt.mesh.position.y += pt.vy; pt.mesh.position.z += pt.vz;
+    pt.vy -= 0.01; pt.life--;
+    if (pt.life <= 0) { scene.remove(pt.mesh); particles.splice(i, 1); }
+  }
+
+  document.getElementById('progFill').style.width = Math.min(100, (distance / finishDist) * 100) + '%';
+  const hpPct = Math.max(0, (playerHp / maxPlayerHp) * 100);
+  document.getElementById('hpFill').style.width = hpPct + '%';
+  document.getElementById('turboFill').style.width = turboEnergy + '%';
+  document.getElementById('hudRank').innerText = `${1 + rivals.filter(r => r.dist > distance).length}/4`;
+
+  if (hpPct < 32) document.getElementById('vignette').classList.add('danger');
+  else document.getElementById('vignette').classList.remove('danger');
+
+  const zoomZ = slowMoTimer > 0 ? 7.6 : (turboActive ? 10.3 : 9.4);
+  const shakeX = shakeTimer > 0 ? (Math.random() - 0.5) * 0.35 : 0;
+  const shakeY = shakeTimer > 0 ? (Math.random() - 0.5) * 0.35 : 0;
+  if (shakeTimer > 0) shakeTimer--;
+
+  camera.position.x += (curX * 0.55 + shakeX - camera.position.x) * 0.12;
+  camera.position.y += (5.1 + posY * 0.4 + shakeY - camera.position.y) * 0.12;
+  camera.position.z += (zoomZ - camera.position.z) * 0.12;
+  camera.lookAt(curX * 0.4, 1.6 + posY * 0.3, -8);
+
+  if (playerHp <= 0) { finishRace(false); return; }
+  if (distance >= finishDist) { finishRace(true); return; }
+  renderer.render(scene, camera);
+}
+
+const nameInput = document.getElementById('playerNameInput');
+nameInput.value = save.name;
+nameInput.addEventListener('input', () => { save.name = nameInput.value.trim() || 'ڕابەر'; saveData(); });
+
+function renderQuickChars() {
+  const strip = document.getElementById('quickCharStrip');
+  strip.innerHTML = '';
+  CHARS.forEach(c => {
+    const unlocked = save.unlockedChars.includes(c.id);
+    const div = document.createElement('div');
+    div.className = 'chip' + (save.char === c.id ? ' active' : '') + (!unlocked ? ' locked' : '');
+    div.innerText = unlocked ? c.name : `🔒 ${c.name}`;
+    div.onclick = () => {
+      if (unlocked) { save.char = c.id; saveData(); renderQuickChars(); }
+      else { openShop('chars'); }
+    };
+    strip.appendChild(div);
+  });
+}
+
+document.querySelectorAll('.biome-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.biome-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedBiome = btn.dataset.biome;
+  });
+});
+
+function updateLevelUI() {
+  document.getElementById('lvlLabel').innerText = `قۆناغی ${selectedLevel}` + (selectedLevel === 5 || selectedLevel === 10 ? ' 👹 (بۆس)' : '');
+}
+document.getElementById('lvlPrev').addEventListener('click', () => { if (selectedLevel > 1) { selectedLevel--; updateLevelUI(); } });
+document.getElementById('lvlNext').addEventListener('click', () => { if (selectedLevel < 10) { selectedLevel++; updateLevelUI(); } });
+
+let currentTab = 'chars';
+function openShop(tab = 'chars') {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  renderShopItems();
+  document.getElementById('shopScreen').style.display = 'flex';
+}
+
+function renderShopItems() {
+  const box = document.getElementById('shopItems');
+  box.innerHTML = '';
+  saveData();
+
+  if (currentTab === 'chars') {
+    CHARS.forEach(c => {
+      const owned = save.unlockedChars.includes(c.id);
+      addShopRow(box, c.name, c.desc, c.price, owned, save.char === c.id, () => {
+        if (!owned && save.coins >= c.price) { save.coins -= c.price; save.unlockedChars.push(c.id); }
+        if (save.unlockedChars.includes(c.id)) save.char = c.id;
+        saveData(); renderShopItems(); renderQuickChars();
+      });
+    });
+  } else if (currentTab === 'mounts') {
+    MOUNTS.forEach(m => {
+      const owned = save.unlockedMounts.includes(m.id);
+      addShopRow(box, m.name, `${m.ability} | خوێن: ${m.hp}`, m.price, owned, save.mount === m.id, () => {
+        if (!owned && save.coins >= m.price) { save.coins -= m.price; save.unlockedMounts.push(m.id); }
+        if (save.unlockedMounts.includes(m.id)) save.mount = m.id;
+        saveData(); renderShopItems();
+      });
+    });
+  } else if (currentTab === 'weapons') {
+    WEAPONS.forEach(w => {
+      const owned = save.unlockedWeapons.includes(w.id);
+      addShopRow(box, w.name, w.desc, w.price, owned, save.weapon === w.id, () => {
+        if (!owned && save.coins >= w.price) { save.coins -= w.price; save.unlockedWeapons.push(w.id); }
+        if (save.unlockedWeapons.includes(w.id)) save.weapon = w.id;
+        saveData(); renderShopItems();
+      });
+    });
+  } else {
+    GEAR.forEach(g => {
+      const owned = save.gear.includes(g.id);
+      addShopRow(box, g.name, g.desc, g.price, owned, owned, () => {
+        if (!owned && save.coins >= g.price) { save.coins -= g.price; save.gear.push(g.id); saveData(); renderShopItems(); }
+      });
+    });
+  }
+}
+
+function addShopRow(container, title, desc, price, owned, equipped, onAction) {
+  const card = document.createElement('div');
+  card.className = 'item-card' + (equipped ? ' equipped' : '');
+  let btnText = `🪙 ${price}`, btnClass = 'act-buy';
+  if (equipped) { btnText = 'چالاکە ✓'; btnClass = 'act-done'; }
+  else if (owned) { btnText = 'هەڵبژاردن'; btnClass = 'act-equip'; }
+  else if (save.coins < price) { btnClass = 'act-no'; }
+
+  card.innerHTML = `<div><h4>${title}</h4><p>${desc}</p></div>`;
+  const btn = document.createElement('button');
+  btn.className = `act-btn ${btnClass}`;
+  btn.innerText = btnText;
+  btn.onclick = onAction;
+  card.appendChild(btn);
+  container.appendChild(card);
+}
+
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => openShop(b.dataset.tab)));
+document.getElementById('openShopBtn').addEventListener('click', () => openShop('chars'));
+document.getElementById('closeShopBtn').addEventListener('click', () => { document.getElementById('shopScreen').style.display = 'none'; });
+document.getElementById('startBtn').addEventListener('click', () => startLevel(selectedLevel));
+document.getElementById('backMenuBtn').addEventListener('click', () => {
+  document.getElementById('endScreen').style.display = 'none';
+  document.getElementById('menuScreen').style.display = 'flex';
+  renderQuickChars();
+  updateLevelUI();
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+saveData();
+renderQuickChars();
+updateLevelUI();
+animate();
+  </script>
+</body>
+</html>
+<link rel="manifest" href="manifest.json">
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}</script>
+
+        
